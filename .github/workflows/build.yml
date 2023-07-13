@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  workflow_dispatch:
+    inputs:
+      arxiv:
+        description: 'eg. https://arxiv.org/abs/2305.18290'
+        required: true
+
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          persist-credentials: false # otherwise, the token used is the GITHUB_TOKEN, instead of your personal access token.
+          fetch-depth: 0 # otherwise, there would be errors pushing refs to the destination repository.
+      - run: docker --version
+      - name: build
+        run: |
+          PAPER_ID="$(basename $(echo ${{ github.event.inputs.arxiv }}) | xargs)"
+          curl -O "https://arxiv.org/e-print/$PAPER_ID"
+          tar -xzvf "$PAPER_ID"
+          SOURCE="$(find . -name "main.tex")"
+          [ -z "$SOURCE" ] && SOURCE="$(find . -name "*.tex" | head -n 1)"
+          SOURCE="$(basename $SOURCE)"
+          docker run --rm -v "$(pwd)":/docdir:z -w /docdir --user "$(id -u):$(id -g)" latexml/ar5ivist:latest --source="$SOURCE" --destination="html/$PAPER_ID/index.html"
+          git add --all "html/$PAPER_ID/"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          git commit -a -m "✨ Add https://ar5iv.yish.io/html/$PAPER_ID" -m "arXiv https://arxiv.org/abs/$PAPER_ID"
+      - name: Push changes
+        uses: ad-m/github-push-action@master
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          branch: ${{ github.ref }}
